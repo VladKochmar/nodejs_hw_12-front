@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Продукти</title>
+  <!-- Підключення CSS для стилів -->
+  <link rel="stylesheet" href="../style/main.css" />
+  <!-- Підключення необхідних скриптів -->
+  <script src="../scripts/api/RequestManager.js"></script>
+  <script src="../scripts/components/ListDataManager.js"></script>
+  <script src="../scripts/settings.js"></script>
+  <script src="../scripts/components/HeaderManager.js"></script>
+  <script src="../scripts/api/BaseApiManager.js"></script>
+  <script src="../scripts/api/ProductsApiManager.js"></script>
+  <script src="../scripts/components/PriceOrderSelector.js"></script>
+  <script src="../scripts/components/PaginationManager.js"></script>
+  <script src="../scripts/components/FiltersManager.js"></script>
+</head>
+
+<body>
+  <div class="base-container">
+    <div class="filters-container"></div>
+    <div class="content-container">
+      <script></script>
+      <!-- <h1>Список продуктів</h1> -->
+      <div class="price-order-container"></div>
+      <!-- Контейнер для таблиці з продуктами -->
+      <div id="table-container"></div>
+      <!-- Спіннер завантаження -->
+      <div class="loading" id="loading-spinner" style="display: none">
+        <div class="spinner"></div>
+        Завантаження...
+      </div>
+      <!-- Повідомлення про помилку -->
+      <div class="error-message" id="error-message" style="display: none">
+        Виникла помилка при завантаженні даних.
+      </div>
+      <hr />
+
+
+      <script>
+        let pageData = {}
+        // Функція, що виконується при завантаженні сторінки
+        window.onload = async function () {
+
+          // Використання класу HeaderManager для створення заголовка з меню
+          const headerManager = new HeaderManager(
+            'products/list.html',
+            menuItems
+          )
+
+          let priceOrderSelector, filtersManager
+
+          // Функція для видалення продукту за ідентифікатором
+          async function deleteFunction(id) {
+            await ProductsApiManager.deleteProduct(id)
+            window.location.reload()
+          }
+          //функція застосування фільтрів
+          function getFiltersQueryString() {
+            const queryOptions = [
+              `page=${pageData.currentPage ?? 0}`,
+              `perPage=${pageData.perPage ?? 4}`,
+            ]
+            const filtersQueryString = filtersManager.getQueryString()
+            if (filtersQueryString) queryOptions.push(filtersQueryString)
+
+            queryOptions.push(`sort=${priceOrderSelector.currentOrder}`)
+            return queryOptions.join('&')
+          }
+
+          // Функція для отримання даних та відображення таблиці продуктів
+          async function fetchDataAndDisplay(page = 0) {
+            const loadingSpinner = document.getElementById('loading-spinner')
+            const errorMessage = document.getElementById('error-message')
+            const tableContainer = document.getElementById('table-container')
+
+
+            try {
+              loadingSpinner.style.display = 'block'
+              tableContainer.innerHTML = ''
+              errorMessage.style.display = 'none'
+
+              if (Number.isFinite(page)) pageData.currentPage = page
+              // Отримання даних продуктів з сервера
+              const resData = await ProductsApiManager.getListWithQuery(
+                getFiltersQueryString()
+              )
+
+              let productsList = resData.data?.documents
+
+              pageData = {
+                ...pageData,
+                totalItemsNumber: resData.data?.count,
+              }
+
+              if (productsList) {
+                const fields = {
+                  title: 'Назва',
+                  price: 'Ціна',
+                  seller: {
+                    title: 'Продавець',
+                    contentGetter: (item) => item.seller?.name
+                  },
+                  productType: {
+                    title: 'Тип',
+                    contentGetter: (item) => item.productType?.title
+                  },
+                  number: 'Кількість'
+                }
+
+                // Створення таблиці продуктів
+                const table = ListDataManager.createTableFromList(
+                  productsList,
+                  fields,
+                )
+
+                tableContainer.append(table)
+              } else {
+                throw new Error('Дані відсутні')
+              }
+            } catch (error) {
+              console.error('Помилка при завантаженні даних:', error)
+              errorMessage.style.display = 'block'
+            } finally {
+              loadingSpinner.style.display = 'none'
+            }
+          }
+          //----------------------
+          // Додавання селектора сортування
+          priceOrderSelector = new PriceOrderSelector(['price', 'number'],
+            '.price-order-container',
+            () => fetchDataAndDisplay(0)
+          )
+
+          //----------------------
+          // Отримання даних продуктів з сервера
+          const resFiltersData = await ProductsApiManager.getFiltersData()
+
+          if (resFiltersData?.data) {
+            const filtersConfig = [
+              {
+                name: 'title',
+                title: 'Назва товару',
+                type: 'search',
+              },
+              {
+                name: 'price',
+                title: 'Ціна',
+                type: 'range',
+                options: { min: 0, max: 1000 },
+              },
+              {
+                name: 'number',
+                title: 'Кількість',
+                type: 'range',
+                options: { min: 0, max: 1000 },
+              },
+              {
+                title: 'Тип Товару',
+                name: 'productType',
+                type: 'selectMany',
+                options: resFiltersData.data.types.map(item => ({ title: item.title, value: item._id }))
+              },
+              {
+                title: 'Продавець',
+                name: 'seller',
+                type: 'selectMany',
+                options: resFiltersData.data.sellers.map((item) => ({
+                  title: item.name,
+                  value: item._id,
+                })),
+              },
+            ]
+            //---
+            filtersManager = new FiltersManager(
+              filtersConfig,
+              '.filters-container',
+              async () => {
+                await fetchDataAndDisplay(0)
+                //------------- додавання пагінації -----
+                new PaginationManager({
+                  totalItemsNumber: pageData.totalItemsNumber,
+                  itemsPerPage: 4,
+                  currentPage: 0,
+                  containerSelector: '#pagination',
+                  onClick: async (page) => {
+                    await fetchDataAndDisplay(page)
+                  },
+                })
+              }
+            )
+            // Виклик функції для отримання та відображення даних
+            await fetchDataAndDisplay(0)
+
+            //------------- додавання пагінації -----
+            new PaginationManager({
+              totalItemsNumber: pageData.totalItemsNumber,
+              itemsPerPage: 4,
+              currentPage: 0,
+              containerSelector: '#pagination',
+              onClick: async (page) => {
+                await fetchDataAndDisplay(page)
+              },
+            })
+          }
+        }
+      </script>
+      <div id="pagination"></div>
+    </div>
+  </div>
+</body>
+
+</html>

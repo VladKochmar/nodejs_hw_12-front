@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Продукти (прокрутка)</title>
+  <link rel="stylesheet" href="../style/main.css">
+  <script src="../scripts/settings.js"></script>
+  <script src="../scripts/components/HeaderManager.js"></script>
+  <script src="../scripts/api/RequestManager.js"></script>
+  <script src="../scripts/api/BaseApiManager.js"></script>
+  <script src="../scripts/api/ProductsApiManager.js"></script>
+  <script src="../scripts/components/LoadOnScroll.js"></script>
+  <script src="../scripts/components/FiltersManager.js"></script>
+  <script src="../scripts/components/PriceOrderSelector.js"></script>
+</head>
+
+<body>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      new HeaderManager('products/loadingOnScroll.html', menuItems)
+    })
+  </script>
+  <div class="base-container">
+    <div class="filters-container"></div>
+    <div class="content-container">
+      <div class="price-order-container"></div>
+      <div id="items-container"></div>
+    </div>
+  </div>
+  <script>
+    let pageData = {}
+
+    window.onload = async function () {
+      let priceOrderSelector, filtersManager
+      const itemsListContianer = document.getElementById('items-container')
+
+      const infiniteScroll = new LoadOnScroll(
+        '#items-container',
+        '/products',
+        5
+      )
+
+      function getFiltersQueryString() {
+        const queryOptions = []
+        const filtersQueryString = filtersManager.getQueryString()
+        if (filtersQueryString) queryOptions.push(filtersQueryString)
+
+        queryOptions.push(`sort=${priceOrderSelector.currentOrder}`)
+        return queryOptions.join('&')
+      }
+
+      async function fetchDataAndDisplay(page = 0) {
+        const query = getFiltersQueryString()
+        infiniteScroll.resetPage()
+        infiniteScroll.setQuery(query)
+        itemsListContianer.innerHTML = ''
+        infiniteScroll.init()
+      }
+
+      priceOrderSelector = new PriceOrderSelector(['price', 'number'],
+        '.price-order-container',
+        () => fetchDataAndDisplay(0)
+      )
+
+
+      const resFiltersData = await ProductsApiManager.getFiltersData()
+      if (resFiltersData?.data) {
+        const filtersConfig = [
+          {
+            name: 'title',
+            title: 'Назва товару',
+            type: 'search',
+          },
+          {
+            name: 'price',
+            title: 'Ціна',
+            type: 'range',
+            options: { min: 0, max: 1000 },
+          },
+          {
+            name: 'number',
+            title: 'Кількість',
+            type: 'range',
+            options: { min: 0, max: 1000 },
+          },
+          {
+            title: 'Тип Товару',
+            name: 'productType',
+            type: 'selectMany',
+            options: resFiltersData.data.types.map(item => ({ title: item.title, value: item._id }))
+          },
+          {
+            title: 'Продавець',
+            name: 'seller',
+            type: 'selectMany',
+            options: resFiltersData.data.sellers.map((item) => ({
+              title: item.name,
+              value: item._id,
+            })),
+          },
+        ]
+        //---
+        filtersManager = new FiltersManager(
+          filtersConfig,
+          '.filters-container',
+          async () => {
+            await fetchDataAndDisplay(0)
+          }
+        )
+        // Виклик функції для отримання та відображення даних
+        await fetchDataAndDisplay(0)
+      }
+    }
+  </script>
+</body>
+
+</html>
